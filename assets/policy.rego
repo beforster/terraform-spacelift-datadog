@@ -37,6 +37,31 @@ webhook[{"endpoint_id": endpoint_id, "payload": payload}] {
 	)}
 }
 
+# We will send a separate webhook containing less information for runs that 
+# reach a state of Unconfirmed.
+# Removes state timings for now, since these runs have not reached a terminal state.
+webhook[{"endpoint_id": endpoint_id, "payload": payload}] {
+	# Send the webhook to any endpoint labeled as "ddmetrics".
+	endpoint := input.webhook_endpoints[_]
+	endpoint.labels[_] == "ddmetrics"
+	endpoint_id := endpoint.id
+
+	# Only send the webhook if the run reached the Unconfirmed state.
+	run_state == "UNCONFIRMED"
+
+	payload := {"series": array.concat(
+		[
+			run_count(endpoint.labels),
+			resources("added", endpoint.labels),
+			resources("changed", endpoint.labels),
+			resources("deleted", endpoint.labels),
+			resources("replaced", endpoint.labels),
+		],
+		policies(endpoint.labels),
+	)}
+}
+
+
 # Metric definition for spacelift.integration.run.count.
 #
 # This is a simple run count, broken down by the standard tags.
@@ -134,6 +159,8 @@ worker_pool = name {
 	name := input.run_updated.stack.worker_pool.name
 }
 
-# Only sample the webhook if the run reached a terminal state, and some metrics
-# have been collected.
-sample { run_state == terminal[_] }
+# Sample the webhook if the run reached a terminal or unconfirmed state.
+sample { 
+	run_state == terminal[_]
+	run_state == "UNCONFIRMED"
+}
